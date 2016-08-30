@@ -65,7 +65,6 @@ let main argv =
     let write = worksheetWrite sheet
 
     let speaker = new SpeechSynthesizer()
-    speaker.SelectVoice "Microsoft Zira Desktop"
 
     let processHistory (history : History.Root) =
         let pickNumber = history.SelectionId
@@ -117,5 +116,5 @@ let main argv =
 
         loop 0L
 
-    runApp getToken pollFile 5000
+    runApp getToken pollWeb 5000
     0
