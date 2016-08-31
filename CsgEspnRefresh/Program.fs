@@ -1,7 +1,7 @@
-﻿open Microsoft.Office.Interop
+﻿open System
+open Microsoft.Office.Interop
 open System.Runtime.InteropServices
 open FSharp.Data
-open System.Speech.Synthesis
 
 type History = JsonProvider<"""[{"selectionId":1,"teamId":10,"undo":false,"player":{"playerId":13934,"firstName":"Antonio","lastName":"Brown","positionId":3,"proTeamId":23},"slotCategoryId":4,"isKeeper":false},{"selectionId":2,"teamId":2,"undo":false,"player":{"playerId":16733,"firstName":"Odell","lastName":"Beckham Jr.","positionId":3,"proTeamId":19},"slotCategoryId":4,"isKeeper":false}]""">
 
@@ -15,8 +15,15 @@ let readColumn (range : Excel.Range) =
 let worksheetWrite (sheet : Excel.Worksheet) cell value =
     sheet.Cells.Range(cell).Value2 <- value
 
-let findWorksheet () =
-    let app = Marshal.GetActiveObject "Excel.Application" :?> Excel.Application
+let getApp () =
+    try
+        Marshal.GetActiveObject "Excel.Application" :?> Excel.Application
+    with
+        | ex -> 
+            eprintfn "Couldn't find open excel application. If excel is open, try running this as admin"
+            raise ex
+
+let findWorksheet (app : Excel.Application) =
     let workbookMaybe = 
         [0..app.Workbooks.Count] 
         |> Seq.map (fun i -> app.Workbooks.[i+1])
@@ -25,23 +32,30 @@ let findWorksheet () =
     let workbook =
         match workbookMaybe with
         | Some w -> w
-        | None -> failwith "Could not find excel spreadsheet open tarting with CSG"
+        | None ->
+            failwith "Could not find proper excel spreadsheet. Please make sure you have the CSG spreadsheet open"
 
     workbook.Worksheets.Item 1 :?> Excel.Worksheet
 
-let getToken () =
+let rec getToken () =
     printf "Token: "
-    let token = System.Console.ReadLine()
-    let league = token.Split(':').[1]
-    (league, token)
+    let token = Console.ReadLine()
+    if (new Text.RegularExpressions.Regex("^\d(:\d+){4}$")).IsMatch(token) then
+        let league = token.Split(':').[1]
+        (league, token)
+    else
+        printfn "Invalid Token"
+        getToken ()
 
 [<EntryPoint>]
 let main argv = 
+    printfn "Please view directions at https://github.com/jonrad/EspnPoll"
+
     let firstRow = 12
     let espnColumn = "C"
     let pickColumn = "J"
 
-    let sheet = findWorksheet ()
+    let sheet = findWorksheet(getApp())
 
     let lastRow =
         readColumn (sheet.Cells.Range("A:A"))
@@ -64,13 +78,10 @@ let main argv =
     let read = worksheetRead sheet
     let write = worksheetWrite sheet
 
-    let speaker = new SpeechSynthesizer()
-
     let processHistory (history : History.Root) =
         let pickNumber = history.SelectionId
         let name = sprintf "%s %s" history.Player.FirstName history.Player.LastName
         printfn "Pick #%d: %s" pickNumber name
-        speaker.Speak name
 
         let row = rowMap.TryFind name
         match row with
@@ -79,7 +90,10 @@ let main argv =
         ()
 
     let processText text =
-        let regex = new System.Text.RegularExpressions.Regex """"pickHistory":(\[[^\]]+\])"""
+        // Thoughts: Would be fun to handle this using something like 
+        // https://github.com/sebastienros/jint
+        // but that seems heavy handed for now
+        let regex = new Text.RegularExpressions.Regex """"pickHistory":(\[[^\]]+\])"""
         let matches = regex.Matches text
         let histories = 
             [0..matches.Count - 1] 
@@ -87,20 +101,16 @@ let main argv =
             |> Seq.map History.Parse
             |> Seq.concat
 
-        let regexSynch = new System.Text.RegularExpressions.Regex """"synchTime":(\d+)"""
+        let regexSynch = new Text.RegularExpressions.Regex """"synchTime":(\d+)"""
         let synchMatches = regexSynch.Matches text
 
-        let synchTime = if synchMatches.Count > 0 then System.Int64.Parse(synchMatches.[synchMatches.Count - 1].Groups.[1].Value) else 0L
+        let synchTime = if synchMatches.Count > 0 then Int64.Parse(synchMatches.[synchMatches.Count - 1].Groups.[1].Value) else 0L
 
         (synchTime, histories)
 
-    let pollFile league token synchTime =
-        printfn "League: %s, Token: %s, Synchtime: %d" league token synchTime
-        System.IO.File.ReadAllText("C:\\temp\\espn2.js") |> processText
-
     let pollWeb league token synchTime =
         let url = sprintf "http://fantasydraft.espn.go.com/league-%s/extdraft/json/POLL?&poll=%d&token=%s&r=522" league synchTime token
-        use wc = new System.Net.WebClient()
+        use wc = new Net.WebClient()
         wc.DownloadString(url) |> processText
 
     let runApp getToken poll (sleepTime : int) =
@@ -110,8 +120,8 @@ let main argv =
             let (newSynchTime, histories) = poll league token synchTime 
             histories |> Seq.iter processHistory
 
-            printfn "polled %d" newSynchTime
-            System.Threading.Thread.Sleep sleepTime
+            printfn "polled %d, new synch time %d" synchTime newSynchTime
+            Threading.Thread.Sleep sleepTime
             loop (if newSynchTime > synchTime then newSynchTime else synchTime)
 
         loop 0L
