@@ -50,9 +50,10 @@ let rec getToken () =
 [<EntryPoint>]
 let main argv = 
     printfn "Please view directions at https://github.com/jonrad/EspnPoll"
+    printfn "Please save your spreadsheet before continuing!"
 
     let shouldTest () =
-        printf "Would you like to do a test run (Y/N)? "
+        printf "Would you like to do a fake test run (Y/N)? "
         let response = Console.ReadLine()
         response.Trim().ToLower() = "y"
 
