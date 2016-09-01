@@ -51,6 +51,11 @@ let rec getToken () =
 let main argv = 
     printfn "Please view directions at https://github.com/jonrad/EspnPoll"
 
+    let shouldTest () =
+        printf "Would you like to do a test run (Y/N)? "
+        let response = Console.ReadLine()
+        response.Trim().ToLower() = "y"
+
     let firstRow = 12
     let espnColumn = "C"
     let pickColumn = "J"
@@ -109,7 +114,7 @@ let main argv =
         (synchTime, histories)
 
     let pollWeb league token synchTime =
-        let url = sprintf "http://fantasydraft.espn.go.com/league-%s/extdraft/json/POLL?&poll=%d&token=%s&r=522" league synchTime token
+        let url = sprintf "http://fantasydraft.espn.go.com/league-%s/extdraft/json/POLL?&poll=%d&token=%s" league synchTime token
         use wc = new Net.WebClient()
         wc.DownloadString(url) |> processText
 
@@ -126,5 +131,11 @@ let main argv =
 
         loop 0L
 
-    runApp getToken pollWeb 5000
+    if shouldTest () then
+        History.GetSamples() |> Seq.iter processHistory
+        printfn "If everything worked properly, you should see Brown and Beckham with a pick number in excel"
+        printfn "Press enter to quit"
+        Console.ReadLine() |> ignore
+    else
+        runApp getToken pollWeb 5000
     0
